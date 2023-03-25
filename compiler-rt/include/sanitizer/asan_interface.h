@@ -47,6 +47,8 @@ void __asan_poison_memory_region(void const volatile *addr, size_t size);
 /// \param size Size of memory region.
 void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
 
+void __interceptor_palloc(void const volatile *addr, size_t size);
+
 // Macros provided for convenience.
 #if __has_feature(address_sanitizer) || defined(__SANITIZE_ADDRESS__)
 /// Marks a memory region as unaddressable.
@@ -68,10 +70,15 @@ void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
 /// \param size Size of memory region.
 #define ASAN_UNPOISON_MEMORY_REGION(addr, size) \
   __asan_unpoison_memory_region((addr), (size))
+/// postgresql memory pool interface
+#define ASAN_MEMPOOL_ALLOC(addr, size) \
+  __interceptor_palloc((addr), (size))
 #else
 #define ASAN_POISON_MEMORY_REGION(addr, size) \
   ((void)(addr), (void)(size))
 #define ASAN_UNPOISON_MEMORY_REGION(addr, size) \
+  ((void)(addr), (void)(size))
+#define ASAN_MEMPOOL_ALLOC(addr, size) \
   ((void)(addr), (void)(size))
 #endif
 

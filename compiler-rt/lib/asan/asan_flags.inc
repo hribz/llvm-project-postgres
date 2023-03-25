@@ -16,6 +16,11 @@
 // ASAN_FLAG(Type, Name, DefaultValue, Description)
 // See COMMON_FLAG in sanitizer_flags.inc for more details.
 
+ASAN_FLAG(
+    bool, replace_postgres, true,
+    "If set, uses custom wrappers and replacements for postgres's memory context functions "
+    "to find more errors.")
+
 ASAN_FLAG(int, quarantine_size, -1,
             "Deprecated, please use quarantine_size_mb.")
 ASAN_FLAG(int, quarantine_size_mb, -1,

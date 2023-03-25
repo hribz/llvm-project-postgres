@@ -22,6 +22,7 @@
 namespace __asan {
 
 void InitializeAsanInterceptors();
+void InitializePostgresInterceptors();
 void InitializePlatformInterceptors();
 
 #define ENSURE_ASAN_INITED()      \

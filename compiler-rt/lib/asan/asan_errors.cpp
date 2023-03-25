@@ -43,6 +43,39 @@ void ErrorDeadlySignal::Print() {
   ReportDeadlySignal(signal, tid, &OnStackUnwind, &scariness);
 }
 
+/*---new---*/
+void ErrorPQDoubleFree::Print() {
+  Decorator d;
+  Printf("%s", d.Error());
+  Report(
+      "ERROR: AddressSanitizer: attempting %s on %p in thread %s:\n",
+      scariness.GetDescription(), addr_description.Address(),
+      AsanThreadIdAndName(tid).c_str());
+  Printf("%s", d.Default());
+  scariness.Print();
+  GET_STACK_TRACE_FATAL(second_free_stack->trace[0],
+                        second_free_stack->top_frame_bp);
+  stack.Print();
+  // addr_description.Print();
+  ReportErrorSummary(scariness.GetDescription(), &stack);
+}
+void ErrorPQFreeNotMalloced::Print() {
+  Decorator d;
+  Printf("%s", d.Error());
+  Report(
+      "ERROR: AddressSanitizer: attempting free on address "
+      "which was not malloc()-ed: %p in thread %s\n",
+      addr_description.Address(), AsanThreadIdAndName(tid).c_str());
+  Printf("%s", d.Default());
+  CHECK_GT(free_stack->size, 0);
+  scariness.Print();
+  GET_STACK_TRACE_FATAL(free_stack->trace[0], free_stack->top_frame_bp);
+  stack.Print();
+  // addr_description.Print();
+  ReportErrorSummary(scariness.GetDescription(), &stack);
+}
+/*------*/
+
 void ErrorDoubleFree::Print() {
   Decorator d;
   Printf("%s", d.Error());
@@ -477,6 +510,12 @@ ErrorGeneric::ErrorGeneric(u32 tid, uptr pc_, uptr bp_, uptr sp_, uptr addr,
           bug_type_score = 25;
           far_from_bounds = AdjacentShadowValuesAreFullyPoisoned(shadow_addr);
           break;
+        // NEW
+        case kAsanPallocLeftRedzoneMagic:
+          bug_descr = "pq-buffer-overflow";
+          bug_type_score = 20;
+          far_from_bounds = AdjacentShadowValuesAreFullyPoisoned(shadow_addr);
+          break;
       }
       scariness.Scare(bug_type_score + read_after_free_bonus, bug_descr);
       if (far_from_bounds) scariness.Scare(10, "far-from-bounds");
@@ -533,6 +572,8 @@ static void PrintLegend(InternalScopedString *str) {
   PrintShadowByte(str, "  ASan internal:           ", kAsanInternalHeapMagic);
   PrintShadowByte(str, "  Left alloca redzone:     ", kAsanAllocaLeftMagic);
   PrintShadowByte(str, "  Right alloca redzone:    ", kAsanAllocaRightMagic);
+  // NEW
+  PrintShadowByte(str, "  PostgreSql MemoryChunk left redzone:    ", kAsanPallocLeftRedzoneMagic);
 }
 
 static void PrintShadowBytes(InternalScopedString *str, const char *before,

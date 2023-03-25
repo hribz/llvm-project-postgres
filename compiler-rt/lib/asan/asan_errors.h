@@ -64,6 +64,33 @@ struct ErrorDeadlySignal : ErrorBase {
   void Print();
 };
 
+/*---new struct---*/
+struct ErrorPQDoubleFree : ErrorBase {
+  const BufferedStackTrace *second_free_stack;
+  AddressDescription addr_description;
+
+  ErrorPQDoubleFree() = default;  // (*)
+  ErrorPQDoubleFree(u32 tid, BufferedStackTrace *stack, uptr addr)
+      : ErrorBase(tid, 42, "pq-mempool-double-free"),
+        second_free_stack(stack), 
+        addr_description(addr, /*shouldLockThreadRegistry=*/false) {
+    CHECK_GT(second_free_stack->size, 0);
+  }
+  void Print();
+};
+struct ErrorPQFreeNotMalloced : ErrorBase {
+  const BufferedStackTrace *free_stack;
+  AddressDescription addr_description;
+
+  ErrorPQFreeNotMalloced() = default;  // (*)
+  ErrorPQFreeNotMalloced(u32 tid, BufferedStackTrace *stack, uptr addr)
+      : ErrorBase(tid, 40, "pq-mempool-bad-free"),
+        free_stack(stack),
+        addr_description(addr, /*shouldLockThreadRegistry=*/false) {}
+  void Print();
+};
+/*------*/
+
 struct ErrorDoubleFree : ErrorBase {
   const BufferedStackTrace *second_free_stack;
   HeapAddressDescription addr_description;
@@ -402,6 +429,9 @@ struct ErrorGeneric : ErrorBase {
   macro(InvalidPointerPair)                     \
   macro(Generic)
 // clang-format on
+#define FOR_EACH_PQ_ERROR_KIND(macro)         \
+  macro(PQDoubleFree)                           \
+  macro(PQFreeNotMalloced)
 
 #define ASAN_DEFINE_ERROR_KIND(name) kErrorKind##name,
 #define ASAN_ERROR_DESCRIPTION_MEMBER(name) Error##name name;
@@ -416,6 +446,8 @@ struct ErrorGeneric : ErrorBase {
 enum ErrorKind {
   kErrorKindInvalid = 0,
   ASAN_FOR_EACH_ERROR_KIND(ASAN_DEFINE_ERROR_KIND)
+  // NEW
+  FOR_EACH_PQ_ERROR_KIND(ASAN_DEFINE_ERROR_KIND)
 };
 
 struct ErrorDescription {
@@ -428,16 +460,22 @@ struct ErrorDescription {
   union {
     ErrorBase Base;
     ASAN_FOR_EACH_ERROR_KIND(ASAN_ERROR_DESCRIPTION_MEMBER)
+    // NEW
+    FOR_EACH_PQ_ERROR_KIND(ASAN_ERROR_DESCRIPTION_MEMBER)
   };
 
   ErrorDescription() { internal_memset(this, 0, sizeof(*this)); }
   explicit ErrorDescription(LinkerInitialized) {}
   ASAN_FOR_EACH_ERROR_KIND(ASAN_ERROR_DESCRIPTION_CONSTRUCTOR)
+  // NEW
+  FOR_EACH_PQ_ERROR_KIND(ASAN_ERROR_DESCRIPTION_CONSTRUCTOR)
 
   bool IsValid() { return kind != kErrorKindInvalid; }
   void Print() {
     switch (kind) {
       ASAN_FOR_EACH_ERROR_KIND(ASAN_ERROR_DESCRIPTION_PRINT)
+      // NEW
+      FOR_EACH_PQ_ERROR_KIND(ASAN_ERROR_DESCRIPTION_PRINT)
       case kErrorKindInvalid:
         CHECK(0);
     }
@@ -446,6 +484,8 @@ struct ErrorDescription {
 };
 
 #undef ASAN_FOR_EACH_ERROR_KIND
+// new
+# undef FOR_EACH_PQ_ERROR_KIND
 #undef ASAN_DEFINE_ERROR_KIND
 #undef ASAN_ERROR_DESCRIPTION_MEMBER
 #undef ASAN_ERROR_DESCRIPTION_CONSTRUCTOR

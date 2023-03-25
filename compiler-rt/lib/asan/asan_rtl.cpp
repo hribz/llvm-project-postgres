@@ -442,6 +442,7 @@ static void AsanInitInternal() {
   SetLowLevelAllocateCallback(OnLowLevelAllocate);
 
   InitializeAsanInterceptors();
+  InitializePostgresInterceptors();
   CheckASLR();
 
   // Enable system log ("adb logcat") on Android.

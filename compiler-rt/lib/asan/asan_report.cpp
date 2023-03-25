@@ -211,6 +211,20 @@ class ScopedInErrorReport {
 
 ErrorDescription ScopedInErrorReport::current_error_(LINKER_INITIALIZED);
 
+/* ---postgresql error report--- */
+void ReportPQDoubleFree(uptr addr, BufferedStackTrace *free_stack) {
+  ScopedInErrorReport in_report;
+  ErrorPQDoubleFree error(GetCurrentTidOrInvalid(), free_stack, addr);
+  in_report.ReportError(error);
+}
+
+void ReportPQFreeNotMalloced(uptr addr, BufferedStackTrace *free_stack) {
+  ScopedInErrorReport in_report;
+  ErrorPQFreeNotMalloced error(GetCurrentTidOrInvalid(), free_stack, addr);
+  in_report.ReportError(error);
+}
+/* ------ */
+
 void ReportDeadlySignal(const SignalContext &sig) {
   ScopedInErrorReport in_report(/*fatal*/ true);
   ErrorDeadlySignal error(GetCurrentTidOrInvalid(), sig);

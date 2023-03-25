@@ -26,7 +26,8 @@ namespace __asan {
 enum AllocType {
   FROM_MALLOC = 1,  // Memory block came from malloc, calloc, realloc, etc.
   FROM_NEW = 2,     // Memory block came from operator new.
-  FROM_NEW_BR = 3   // Memory block came from operator new [ ]
+  FROM_NEW_BR = 3,   // Memory block came from operator new [ ]
+  FROM_PALLOC = 4,  // Memory block came from palloc, MemoryContextAlloc, repalloc, etc.
 };
 
 class AsanChunk;
@@ -212,6 +213,17 @@ void asan_delete(void *ptr, uptr size, uptr alignment,
                  BufferedStackTrace *stack, AllocType alloc_type);
 
 void *asan_malloc(uptr size, BufferedStackTrace *stack);
+/*postgres*/
+typedef struct MemoryContextData *MemoryContext;
+void asan_pfree(void *pointer, BufferedStackTrace *stack);
+void *asan_palloc(void *pointer, uptr size, BufferedStackTrace *stack);
+
+void asan_AllocSetReset(MemoryContext context, BufferedStackTrace *stack);
+void asan_AllocSetDelete(MemoryContext context, BufferedStackTrace *stack);
+void *asan_AllocSetAlloc(MemoryContext context, uptr size, BufferedStackTrace *stack);
+void asan_AllocSetFree(void *pointer, BufferedStackTrace *stack);
+void *asan_AllocSetRealloc(void *pointer, uptr size, BufferedStackTrace *stack);
+/*postgres*/
 void *asan_calloc(uptr nmemb, uptr size, BufferedStackTrace *stack);
 void *asan_realloc(void *p, uptr size, BufferedStackTrace *stack);
 void *asan_reallocarray(void *p, uptr nmemb, uptr size,

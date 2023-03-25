@@ -12,6 +12,7 @@ set(ASAN_SOURCES
   asan_globals.cpp
   asan_globals_win.cpp
   asan_interceptors.cpp
+  asan_interceptors_postgres.cpp
   asan_interceptors_memintrinsics.cpp
   asan_linux.cpp
   asan_mac.cpp
