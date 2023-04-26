@@ -50,7 +50,8 @@
         "ios": "cpp",
         "atomic": "cpp",
         "simd": "cpp",
-        "span": "cpp"
+        "span": "cpp",
+        "__string": "cpp"
     },
     "cmake.sourceDirectory": "${workspaceFolder}/clang/examples"
 }

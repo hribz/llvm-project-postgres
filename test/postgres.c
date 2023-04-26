@@ -11,12 +11,12 @@ void AllocSetFree(void *pointer){
     return ;
 }
 
-void *palloc(int size) {
+void *palloc(void * pointer, int size) {
     void *a=malloc(size);
     return a;
 }
 
-void pfree(void *pointer) {
+void pfree(void *pointer, int size) {
     free(pointer);
     return ;
 }

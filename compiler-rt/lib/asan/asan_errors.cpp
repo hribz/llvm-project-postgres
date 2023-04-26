@@ -43,39 +43,6 @@ void ErrorDeadlySignal::Print() {
   ReportDeadlySignal(signal, tid, &OnStackUnwind, &scariness);
 }
 
-/*---new---*/
-void ErrorPQDoubleFree::Print() {
-  Decorator d;
-  Printf("%s", d.Error());
-  Report(
-      "ERROR: AddressSanitizer: attempting %s on %p in thread %s:\n",
-      scariness.GetDescription(), addr_description.Address(),
-      AsanThreadIdAndName(tid).c_str());
-  Printf("%s", d.Default());
-  scariness.Print();
-  GET_STACK_TRACE_FATAL(second_free_stack->trace[0],
-                        second_free_stack->top_frame_bp);
-  stack.Print();
-  // addr_description.Print();
-  ReportErrorSummary(scariness.GetDescription(), &stack);
-}
-void ErrorPQFreeNotMalloced::Print() {
-  Decorator d;
-  Printf("%s", d.Error());
-  Report(
-      "ERROR: AddressSanitizer: attempting free on address "
-      "which was not malloc()-ed: %p in thread %s\n",
-      addr_description.Address(), AsanThreadIdAndName(tid).c_str());
-  Printf("%s", d.Default());
-  CHECK_GT(free_stack->size, 0);
-  scariness.Print();
-  GET_STACK_TRACE_FATAL(free_stack->trace[0], free_stack->top_frame_bp);
-  stack.Print();
-  // addr_description.Print();
-  ReportErrorSummary(scariness.GetDescription(), &stack);
-}
-/*------*/
-
 void ErrorDoubleFree::Print() {
   Decorator d;
   Printf("%s", d.Error());
@@ -512,9 +479,15 @@ ErrorGeneric::ErrorGeneric(u32 tid, uptr pc_, uptr bp_, uptr sp_, uptr addr,
           break;
         // NEW
         case kAsanPallocLeftRedzoneMagic:
+        case kAsanPallocChunkRedzoneMagic:
           bug_descr = "pq-buffer-overflow";
           bug_type_score = 20;
           far_from_bounds = AdjacentShadowValuesAreFullyPoisoned(shadow_addr);
+          break;
+        case kAsanPallocFreeMagic:
+          bug_descr = "pq-use-after-free";
+          bug_type_score = 20;
+          if (!is_write) read_after_free_bonus = 18;
           break;
       }
       scariness.Scare(bug_type_score + read_after_free_bonus, bug_descr);
@@ -573,7 +546,9 @@ static void PrintLegend(InternalScopedString *str) {
   PrintShadowByte(str, "  Left alloca redzone:     ", kAsanAllocaLeftMagic);
   PrintShadowByte(str, "  Right alloca redzone:    ", kAsanAllocaRightMagic);
   // NEW
-  PrintShadowByte(str, "  PostgreSql MemoryChunk left redzone:    ", kAsanPallocLeftRedzoneMagic);
+  PrintShadowByte(str, "  PostgreSql left redzone: ", kAsanPallocLeftRedzoneMagic);
+  PrintShadowByte(str, "  PostgreSql info redzone: ", kAsanPallocChunkRedzoneMagic);
+  PrintShadowByte(str, "  PostgreSql freed region: ", kAsanPallocFreeMagic);
 }
 
 static void PrintShadowBytes(InternalScopedString *str, const char *before,
@@ -635,5 +610,56 @@ void ErrorGeneric::Print() {
   ReportErrorSummary(bug_descr, &stack);
   PrintShadowMemoryForAddress(addr);
 }
+
+/*---new---*/
+void ErrorPQDoubleFree::Print() {
+  Decorator d;
+  Printf("%s", d.Error());
+  Report(
+      "ERROR: AddressSanitizer: attempting %s on %p in thread %s:\n",
+      scariness.GetDescription(), addr_description.addr,
+      AsanThreadIdAndName(tid).c_str());
+  Printf("%s", d.Default());
+  scariness.Print();
+  GET_STACK_TRACE_FATAL(second_free_stack->trace[0],
+                        second_free_stack->top_frame_bp);
+  stack.Print();
+  addr_description.Print();
+  ReportErrorSummary(scariness.GetDescription(), &stack);
+  PrintShadowMemoryForAddress(addr_description.addr);
+}
+void ErrorPQFreeNotMalloced::Print() {
+  Decorator d;
+  Printf("%s", d.Error());
+  Report(
+      "ERROR: AddressSanitizer: attempting free on address "
+      "which was not malloc()-ed: %p in thread %s\n",
+      addr_description.Address(), AsanThreadIdAndName(tid).c_str());
+  Printf("%s", d.Default());
+  CHECK_GT(free_stack->size, 0);
+  scariness.Print();
+  GET_STACK_TRACE_FATAL(free_stack->trace[0], free_stack->top_frame_bp);
+  stack.Print();
+  addr_description.Print();
+  ReportErrorSummary(scariness.GetDescription(), &stack);
+  PrintShadowMemoryForAddress(addr_description.Address());
+}
+void ErrorPQBNChunk::Print() {
+  Decorator d;
+  Printf("%s", d.Error());
+  Report(
+      "ERROR: AddressSanitizer: attempting free on address "
+      "which begin isn't chunk: %p in thread %s\n",
+      addr_description.Address(), AsanThreadIdAndName(tid).c_str());
+  Printf("%s", d.Default());
+  CHECK_GT(free_stack->size, 0);
+  scariness.Print();
+  GET_STACK_TRACE_FATAL(free_stack->trace[0], free_stack->top_frame_bp);
+  stack.Print();
+  addr_description.Print();
+  ReportErrorSummary(scariness.GetDescription(), &stack);
+  PrintShadowMemoryForAddress(addr_description.Address());
+}
+/*------*/
 
 }  // namespace __asan

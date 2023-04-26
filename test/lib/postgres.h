@@ -5,6 +5,6 @@ void *AllocSetAlloc(MemoryContext context, int size);
 
 void AllocSetFree(void *pointer);
 
-void *palloc(int size);
+void *palloc(void *pointer, int size);
 
-void pfree(void *pointer);
+void pfree(void *pointer, int size);

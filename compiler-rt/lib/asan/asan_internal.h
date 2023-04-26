@@ -161,6 +161,8 @@ const int kAsanAllocaLeftMagic = 0xca;
 const int kAsanAllocaRightMagic = 0xcb;
 // These magic values are belong to postgre error
 const int kAsanPallocLeftRedzoneMagic = 0xd1;
+const int kAsanPallocChunkRedzoneMagic = 0xd2;
+const int kAsanPallocFreeMagic = 0xd3;
 
 static const uptr kCurrentStackFrameMagic = 0x41B58AB3;
 static const uptr kRetiredStackFrameMagic = 0x45E0360E;

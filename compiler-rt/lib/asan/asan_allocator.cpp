@@ -499,15 +499,19 @@ struct Allocator {
         ComputeUserRequestedAlignmentLog(alignment);
     if (alignment < min_alignment)
       alignment = min_alignment;
-    if (size == 0) {
-      size = 1;
-    }
+    // if (size == 0) {
+    //   size = 1;
+    // }
     CHECK(IsPowerOfTwo(alignment));
     // uptr rz_log = ComputeRZLog(size);
     uptr rz_log = 0;
     uptr rz_size = RZLog2Size(rz_log);
     CHECK(LIKELY(rz_size == 16));
     uptr rounded_size = RoundUpTo(Max(size, kChunkHeader2Size), alignment);
+    // if(!fl.specific_postgres) {
+    //   return pointer;
+    // }
+
     uptr needed_size = rounded_size + rz_size;
     // uptr needed_size = size;
     if (alignment > min_alignment)
@@ -557,7 +561,7 @@ struct Allocator {
     uptr chunk_beg = user_beg - kChunkHeaderSize;
     AsanChunk *m = reinterpret_cast<AsanChunk *>(chunk_beg);
     m->alloc_type = alloc_type;
-    CHECK(size);
+    // CHECK(size);
     m->SetUsedSize(size);
     m->user_requested_alignment_log = user_requested_alignment_log;
 
@@ -567,7 +571,7 @@ struct Allocator {
         RoundDownTo(size, SHADOW_GRANULARITY);
     // Poison the redzone before user region
     if(CanPoisonMemory())
-      PoisonShadow(alloc_beg, rz_size, kAsanPallocLeftRedzoneMagic);
+      PoisonShadow(alloc_beg, rz_size, kAsanPallocChunkRedzoneMagic);
     // Unpoison the bulk of the memory region.
     if (size_rounded_down_to_granularity)
       PoisonShadow(user_beg, size_rounded_down_to_granularity, 0);
@@ -592,6 +596,19 @@ struct Allocator {
       uptr fill_size = Min(size, (uptr)fl.max_malloc_fill_size);
       REAL(memset)(res, fl.malloc_fill_byte, fill_size);
     }
+
+    // if(chunk_beg == 0x6290006a0b58) {
+    //   uptr		header, chunk_size;
+    //   header = *((const uptr *) ((const char *) chunk_beg - sizeof(uptr)));
+    //   chunk_size = *((const uptr *) ((const char *) chunk_beg - 2 * sizeof(uptr)));
+    //   Report("palloc find bug %d at 0x%llx\n", header & ((((uptr) 1) << 3) - 1), chunk_beg);
+    //   Report("palloc size %d, UsedSize %d, chunk size %d, chunk state %d\n", size, m->UsedSize(), chunk_size, m->chunk_state);
+    //   // if(size == 4 
+    //   //   // && atomic_load(&m->chunk_state, memory_order_acquire) == CHUNK_QUARANTINE
+    //   //   )
+    //     // ReportPQBeginNotChunk(chunk_beg, stack);
+    // }
+    
     // Must be the last mutation of metadata in this function.
     atomic_store(&m->chunk_state, CHUNK_ALLOCATED, memory_order_release);
     if (alloc_beg != chunk_beg) {
@@ -600,6 +617,95 @@ struct Allocator {
     }
     ASAN_MALLOC_HOOK(res, size);
     return res;
+  }
+
+  void PDeallocate(void *ptr, uptr size, uptr delete_size, uptr delete_alignment,
+                  BufferedStackTrace *stack, AllocType alloc_type) {
+    uptr p = reinterpret_cast<uptr>(ptr);
+    // if(p == 0x6290006a0b38) {
+    //   uptr		header, chunk_size;
+    //   header = *((const uptr *) ((const char *) ptr - sizeof(uptr)));
+    //   chunk_size = *((const uptr *) ((const char *) ptr - 2 * sizeof(uptr)));
+    //   AsanChunk *m = reinterpret_cast<AsanChunk *>(p);
+    //   Report("pfree find bug %d at 0x%llx\n", header & ((((uptr) 1) << 3) - 1), p);
+    //   Report("pfree size %d, UsedSize %d, chunk size %d, chunk state %d\n", size, m->UsedSize(), chunk_size, m->chunk_state);
+    //   // if(chunk_size == 24)
+    //     ReportPQBeginNotChunk(p, stack);
+    // }
+    if (p == 0) return;
+
+    // uptr chunk_beg = p - kChunkHeaderSize;
+    u8 *shadow = (u8 *)MemToShadow(p);
+    int offset = 0;
+    if (*shadow != kAsanPallocChunkRedzoneMagic) {
+      bool BNChunk = true;
+      for(offset = 1; offset <= 40; offset++) {
+        shadow = (u8 *)MemToShadow(p + offset);
+        if (*shadow == kAsanPallocChunkRedzoneMagic) {
+          BNChunk = false;
+          break;
+        }
+      }
+      if(BNChunk)
+        ReportPQBeginNotChunk(p, stack);
+    }
+    uptr chunk_beg = p + offset;
+    CHECK((chunk_beg & (8 - 1)) == 0);
+    AsanChunk *m = reinterpret_cast<AsanChunk *>(chunk_beg);
+
+    ASAN_FREE_HOOK(ptr);
+
+    // Must mark the chunk as quarantined before any changes to its metadata.
+    // Do not quarantine given chunk if we failed to set CHUNK_QUARANTINE flag.
+    if (!AtomicallySetQuarantineFlagIfAllocated(m, ptr, stack)) return;
+
+    if (m->alloc_type != alloc_type) {
+      if (atomic_load(&alloc_dealloc_mismatch, memory_order_acquire)) {
+        ReportAllocTypeMismatch((uptr)ptr, stack, (AllocType)m->alloc_type,
+                                (AllocType)alloc_type);
+      }
+    } else {
+      if (flags()->new_delete_type_mismatch &&
+          (alloc_type == FROM_NEW || alloc_type == FROM_NEW_BR) &&
+          ((delete_size && delete_size != m->UsedSize()) ||
+           ComputeUserRequestedAlignmentLog(delete_alignment) !=
+               m->user_requested_alignment_log)) {
+        ReportNewDeleteTypeMismatch(p, delete_size, delete_alignment, stack);
+      }
+    }
+
+    CHECK_EQ(atomic_load(&m->chunk_state, memory_order_relaxed),
+             CHUNK_QUARANTINE);
+    AsanThread *t = GetCurrentThread();
+    m->SetFreeContext(t ? t->tid() : 0, StackDepotPut(*stack));
+
+    Flags &fl = *flags();
+    if (fl.max_free_fill_size > 0) {
+      // We have to skip the chunk header, it contains free_context_id.
+      uptr scribble_start = (uptr)m + kChunkHeaderSize + kChunkHeader2Size;
+      if (m->UsedSize() >= kChunkHeader2Size) {  // Skip Header2 in user area.
+        uptr size_to_fill = m->UsedSize() - kChunkHeader2Size;
+        size_to_fill = Min(size_to_fill, (uptr)fl.max_free_fill_size);
+        REAL(memset)((void *)scribble_start, fl.free_fill_byte, size_to_fill);
+      }
+    }
+
+    // Poison the region.
+    // PoisonShadow(p, RoundUpTo(size, SHADOW_GRANULARITY),
+    //              kAsanPallocLeftRedzoneMagic);
+    if(m->UsedSize())
+      PoisonShadow(m->Beg(), RoundUpTo(m->UsedSize(), SHADOW_GRANULARITY),
+                 kAsanPallocFreeMagic);
+    // PoisonShadow(chunk_beg, kChunkHeaderSize, kAsanPallocChunkRedzoneMagic);
+    // REAL(memset)(ptr, 0x7F, offset);
+    // REAL(memset)((void *)(m->Beg()), 0x7F, m->UsedSize());
+    // if(p == 0x625000023218) {
+    //   uptr		chunk_size;
+    //   chunk_size = *((const uptr *) ((const char *) ptr - 2 * sizeof(uptr)));
+    //   // Report("after pfree chunk state %d\n", m->chunk_state);
+    //   // if(chunk_size == 32)
+    //   //   ReportPQBeginNotChunk(p, stack);
+    // }
   }
   
   // -------------------- Allocation/Deallocation routines ---------------
@@ -796,11 +902,13 @@ struct Allocator {
   }
 
   bool AtomicallyCheckFreeErrorInPool(uptr ptr, BufferedStackTrace *stack) {
-    u8 freedRegion = 0xf7;
-    u8 *shadow = (u8 *)MemToShadow(ptr);
-    if (*shadow==freedRegion) {
-      ReportPQDoubleFree(ptr,stack);
-      return false;
+    u8 *shadow1 = (u8 *)MemToShadow(ptr);
+    if (*shadow1 == kAsanPallocLeftRedzoneMagic) {
+      u8 *shadow2 = (u8 *)MemToShadow(ptr + 24);
+      if (*shadow2 == kAsanPallocFreeMagic) {
+        ReportPQDoubleFree(ptr + 24, stack);
+        return false;
+      }
     }
     return true;
   }
@@ -886,8 +994,10 @@ struct Allocator {
   }
 
   void ReportInvalidFree(void *ptr, u8 chunk_state, BufferedStackTrace *stack) {
-    if (chunk_state == CHUNK_QUARANTINE)
-      ReportDoubleFree((uptr)ptr, stack);
+    if (chunk_state == CHUNK_QUARANTINE) {
+      if(AtomicallyCheckFreeErrorInPool((uptr)ptr, stack))
+        ReportDoubleFree((uptr)ptr, stack);
+    }
     else
       ReportFreeNotMalloced((uptr)ptr, stack);
   }
@@ -926,6 +1036,35 @@ struct Allocator {
     return GetAsanChunk(alloc_beg);
   }
 
+  // NEW
+  AsanChunk *GetPostChunkByAddr(uptr p, int dirt) {
+    void *alloc_beg = nullptr;
+    u8 *shadow = (u8 *)MemToShadow(p);
+    u8 sval = *shadow;
+    uptr l, offset = 0;
+    for(l = 0; l < GetPageSizeCached(); l++) {
+      shadow = (u8 *)MemToShadow(p - l * dirt);
+      sval = *shadow;
+      if(sval == kAsanPallocChunkRedzoneMagic) {
+        break;
+      }
+    }
+    while(sval == kAsanPallocChunkRedzoneMagic) {
+      alloc_beg = reinterpret_cast<void *>(p - l * dirt - offset);
+      offset++;
+      shadow = (u8 *)MemToShadow(p - l * dirt - offset);
+      sval = *shadow;
+    }
+    if(!alloc_beg)
+      return nullptr;
+
+    AsanChunk *m = reinterpret_cast<AsanChunk *>(alloc_beg);
+    u8 state = atomic_load(&m->chunk_state, memory_order_relaxed);
+    if (state == CHUNK_ALLOCATED || state == CHUNK_QUARANTINE)
+      return m;
+    return nullptr;
+  }
+
   // Allocator must be locked when this function is called.
   AsanChunk *GetAsanChunkByAddrFastLocked(uptr p) {
     void *alloc_beg =
@@ -959,6 +1098,18 @@ struct Allocator {
         m1 = ChooseChunk(addr, m2, m1);
     }
     return AsanChunkView(m1);
+  }
+
+  // NEW
+  AsanChunkView FindPostChunkByAddress(uptr addr) {
+    AsanChunk *m1 = GetPostChunkByAddr(addr, 1);
+    AsanChunk *m2 = GetPostChunkByAddr(addr, -1);
+
+    if(m1 != m2)
+      m1 = ChooseChunk(addr, m1, m2);
+    if(m1)
+      return AsanChunkView(m1);
+    return FindHeapChunkByAddress(addr);
   }
 
   void Purge(BufferedStackTrace *stack) {
@@ -1086,6 +1237,10 @@ void GetAllocatorOptions(AllocatorOptions *options) {
 AsanChunkView FindHeapChunkByAddress(uptr addr) {
   return instance.FindHeapChunkByAddress(addr);
 }
+// NEW
+AsanChunkView FindPostChunkByAddress(uptr addr) {
+  return instance.FindPostChunkByAddress(addr);
+}
 AsanChunkView FindHeapChunkByAllocBeg(uptr addr) {
   return AsanChunkView(instance.GetAsanChunk(reinterpret_cast<void*>(addr)));
 }
@@ -1112,13 +1267,12 @@ void *asan_malloc(uptr size, BufferedStackTrace *stack) {
   return SetErrnoOnNull(instance.Allocate(size, 8, stack, FROM_MALLOC, true));
 }
 
-void asan_pfree(void *pointer, BufferedStackTrace *stack) {
-  uptr p = reinterpret_cast<uptr>(pointer);
-  if (!instance.AtomicallyCheckFreeErrorInPool(p, stack)) return ;
+void asan_pfree(void *pointer, uptr size, BufferedStackTrace *stack) {
+  instance.PDeallocate(pointer, size, 0, 0, stack, FROM_MALLOC);
 }
 
 void *asan_palloc(void *pointer, uptr size, BufferedStackTrace *stack) {
-  return SetErrnoOnNull(instance.Pallocate(pointer, size, 8, stack, FROM_PALLOC, false));
+  return SetErrnoOnNull(instance.Pallocate(pointer, size, 8, stack, FROM_MALLOC, false));
 }
 
 void *asan_AllocSetAlloc(MemoryContext context, uptr size, BufferedStackTrace *stack) {

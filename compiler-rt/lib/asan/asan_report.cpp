@@ -223,6 +223,12 @@ void ReportPQFreeNotMalloced(uptr addr, BufferedStackTrace *free_stack) {
   ErrorPQFreeNotMalloced error(GetCurrentTidOrInvalid(), free_stack, addr);
   in_report.ReportError(error);
 }
+
+void ReportPQBeginNotChunk(uptr addr, BufferedStackTrace *free_stack) {
+  ScopedInErrorReport in_report;
+  ErrorPQBNChunk error(GetCurrentTidOrInvalid(), free_stack, addr);
+  in_report.ReportError(error);
+}
 /* ------ */
 
 void ReportDeadlySignal(const SignalContext &sig) {

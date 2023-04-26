@@ -96,6 +96,7 @@ class AsanChunkView {
 };
 
 AsanChunkView FindHeapChunkByAddress(uptr address);
+AsanChunkView FindPostChunkByAddress(uptr address);
 AsanChunkView FindHeapChunkByAllocBeg(uptr address);
 
 // List of AsanChunks with total size.
@@ -215,7 +216,7 @@ void asan_delete(void *ptr, uptr size, uptr alignment,
 void *asan_malloc(uptr size, BufferedStackTrace *stack);
 /*postgres*/
 typedef struct MemoryContextData *MemoryContext;
-void asan_pfree(void *pointer, BufferedStackTrace *stack);
+void asan_pfree(void *pointer, uptr size, BufferedStackTrace *stack);
 void *asan_palloc(void *pointer, uptr size, BufferedStackTrace *stack);
 
 void asan_AllocSetReset(MemoryContext context, BufferedStackTrace *stack);

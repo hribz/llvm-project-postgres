@@ -52,17 +52,27 @@ static inline bool UseLocalPool() { return MaybeInDlsym(); }
     DECLARE_WRAPPER(ret_type, func, __VA_ARGS__) \
     extern "C" INTERCEPTOR_ATTRIBUTE ret_type WRAP(func)(__VA_ARGS__)
 
-INTERCEPTOR(void , pfree, void *pointer) {
+INTERCEPTOR(void , pfree, void *pointer, uptr size) {
   ENSURE_ASAN_INITED();
   GET_STACK_TRACE_FREE;
   if (!flags()->replace_postgres) {
-    return REAL(pfree)(pointer);
+    return REAL(pfree)(pointer, size);
   }
   // Report("intercept pfree\n");
-  asan_pfree(pointer, &stack);
+  asan_pfree(pointer, size, &stack);
 }
 
 INTERCEPTOR(void *, palloc, void *pointer, uptr size) {
+  ENSURE_ASAN_INITED();
+  GET_STACK_TRACE_MALLOC;
+  if (!flags()->replace_postgres) {
+    return REAL(palloc)(pointer, size);
+  }
+  // Report("intercept palloc\n");
+  return asan_palloc(pointer, size, &stack);
+}
+
+INTERCEPTOR(void *, repalloc, void *pointer, uptr size) {
   ENSURE_ASAN_INITED();
   GET_STACK_TRACE_MALLOC;
   if (!flags()->replace_postgres) {

@@ -57,6 +57,7 @@ void ReportFreeNotMalloced(uptr addr, BufferedStackTrace *free_stack);
 /*---new---*/
 void ReportPQDoubleFree(uptr addr, BufferedStackTrace *free_stack);
 void ReportPQFreeNotMalloced(uptr addr, BufferedStackTrace *free_stack);
+void ReportPQBeginNotChunk(uptr addr, BufferedStackTrace *free_stack);
 /*------*/
 void ReportAllocTypeMismatch(uptr addr, BufferedStackTrace *free_stack,
                              AllocType alloc_type,

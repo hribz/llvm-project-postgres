@@ -138,6 +138,46 @@ void __asan_poison_memory_region(void const volatile *addr, uptr size) {
   }
 }
 
+void __asan_poison_post_region(void const volatile *addr, uptr size) {
+  if (!flags()->allow_user_poisoning || size == 0) return;
+  uptr beg_addr = (uptr)addr;
+  uptr end_addr = beg_addr + size;
+  VPrintf(3, "Trying to poison memory region [%p, %p)\n", (void *)beg_addr,
+          (void *)end_addr);
+  ShadowSegmentEndpoint beg(beg_addr);
+  ShadowSegmentEndpoint end(end_addr);
+  if (beg.chunk == end.chunk) {
+    CHECK_LT(beg.offset, end.offset);
+    s8 value = beg.value;
+    CHECK_EQ(value, end.value);
+    // We can only poison memory if the byte in end.offset is unaddressable.
+    // No need to re-poison memory if it is poisoned already.
+    if (value > 0 && value <= end.offset) {
+      if (beg.offset > 0) {
+        *beg.chunk = Min(value, beg.offset);
+      } else {
+        *beg.chunk = kAsanPallocLeftRedzoneMagic;
+      }
+    }
+    return;
+  }
+  CHECK_LT(beg.chunk, end.chunk);
+  if (beg.offset > 0) {
+    // Mark bytes from beg.offset as unaddressable.
+    if (beg.value == 0) {
+      *beg.chunk = beg.offset;
+    } else {
+      *beg.chunk = Min(beg.value, beg.offset);
+    }
+    beg.chunk++;
+  }
+  REAL(memset)(beg.chunk, kAsanPallocLeftRedzoneMagic, end.chunk - beg.chunk);
+  // Poison if byte in end.offset is unaddressable.
+  if (end.value > 0 && end.value <= end.offset) {
+    *end.chunk = kAsanPallocLeftRedzoneMagic;
+  }
+}
+
 void __asan_unpoison_memory_region(void const volatile *addr, uptr size) {
   if (!flags()->allow_user_poisoning || size == 0) return;
   uptr beg_addr = (uptr)addr;

@@ -67,14 +67,14 @@ struct ErrorDeadlySignal : ErrorBase {
 /*---new struct---*/
 struct ErrorPQDoubleFree : ErrorBase {
   const BufferedStackTrace *second_free_stack;
-  AddressDescription addr_description;
+  HeapAddressDescription addr_description;
 
   ErrorPQDoubleFree() = default;  // (*)
   ErrorPQDoubleFree(u32 tid, BufferedStackTrace *stack, uptr addr)
       : ErrorBase(tid, 42, "pq-mempool-double-free"),
-        second_free_stack(stack), 
-        addr_description(addr, /*shouldLockThreadRegistry=*/false) {
+        second_free_stack(stack) {
     CHECK_GT(second_free_stack->size, 0);
+    GetHeapAddressInformation(addr, 1, &addr_description);
   }
   void Print();
 };
@@ -86,6 +86,17 @@ struct ErrorPQFreeNotMalloced : ErrorBase {
   ErrorPQFreeNotMalloced(u32 tid, BufferedStackTrace *stack, uptr addr)
       : ErrorBase(tid, 40, "pq-mempool-bad-free"),
         free_stack(stack),
+        addr_description(addr, /*shouldLockThreadRegistry=*/false) {}
+  void Print();
+};
+struct ErrorPQBNChunk : ErrorBase {
+  const BufferedStackTrace *free_stack;
+  AddressDescription addr_description;
+
+  ErrorPQBNChunk() = default;  // (*)
+  ErrorPQBNChunk(u32 tid, BufferedStackTrace *stack, uptr addr)
+      : ErrorBase(tid, 40, "pq-begin-not-chunk"),
+        free_stack(stack), 
         addr_description(addr, /*shouldLockThreadRegistry=*/false) {}
   void Print();
 };
@@ -430,8 +441,9 @@ struct ErrorGeneric : ErrorBase {
   macro(Generic)
 // clang-format on
 #define FOR_EACH_PQ_ERROR_KIND(macro)         \
-  macro(PQDoubleFree)                           \
-  macro(PQFreeNotMalloced)
+  macro(PQDoubleFree)                          \
+  macro(PQFreeNotMalloced)                     \
+  macro(PQBNChunk)
 
 #define ASAN_DEFINE_ERROR_KIND(name) kErrorKind##name,
 #define ASAN_ERROR_DESCRIPTION_MEMBER(name) Error##name name;

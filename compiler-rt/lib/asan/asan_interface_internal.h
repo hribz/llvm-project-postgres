@@ -114,6 +114,9 @@ extern "C" {
 
   SANITIZER_INTERFACE_ATTRIBUTE
   void __asan_poison_memory_region(void const volatile *addr, uptr size);
+  // NEW
+  SANITIZER_INTERFACE_ATTRIBUTE
+  void __asan_poison_post_region(void const volatile *addr, uptr size);
   SANITIZER_INTERFACE_ATTRIBUTE
   void __asan_unpoison_memory_region(void const volatile *addr, uptr size);
 

@@ -154,7 +154,8 @@ static void PrintHeapChunkAccess(uptr addr, const ChunkAccess &descr) {
 
 bool GetHeapAddressInformation(uptr addr, uptr access_size,
                                HeapAddressDescription *descr) {
-  AsanChunkView chunk = FindHeapChunkByAddress(addr);
+  // AsanChunkView chunk = FindHeapChunkByAddress(addr);
+  AsanChunkView chunk = FindPostChunkByAddress(addr);
   if (!chunk.IsValid()) {
     return false;
   }

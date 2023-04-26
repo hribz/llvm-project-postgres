@@ -20,6 +20,9 @@ ASAN_FLAG(
     bool, replace_postgres, true,
     "If set, uses custom wrappers and replacements for postgres's memory context functions "
     "to find more errors.")
+ASAN_FLAG(
+    bool, specific_postgres, true,
+    "If set, provide more specific information about where the chunk is allocated.")
 
 ASAN_FLAG(int, quarantine_size, -1,
             "Deprecated, please use quarantine_size_mb.")

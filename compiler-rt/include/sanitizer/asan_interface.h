@@ -33,6 +33,8 @@ extern "C" {
 /// \param size Size of memory region.
 void __asan_poison_memory_region(void const volatile *addr, size_t size);
 
+void __asan_poison_post_region(void const volatile *addr, size_t size);
+
 /// Marks a memory region (<c>[addr, addr+size)</c>) as addressable.
 ///
 /// This memory must be previously allocated by your program. Accessing
@@ -48,6 +50,8 @@ void __asan_poison_memory_region(void const volatile *addr, size_t size);
 void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
 
 void __interceptor_palloc(void const volatile *addr, size_t size);
+void __interceptor_repalloc(void const volatile *addr, size_t size);
+void __interceptor_pfree(void const volatile *addr, size_t size);
 
 // Macros provided for convenience.
 #if __has_feature(address_sanitizer) || defined(__SANITIZE_ADDRESS__)
@@ -73,12 +77,23 @@ void __interceptor_palloc(void const volatile *addr, size_t size);
 /// postgresql memory pool interface
 #define ASAN_MEMPOOL_ALLOC(addr, size) \
   __interceptor_palloc((addr), (size))
+
+#define ASAN_MEMPOOL_REALLOC(addr, size) \
+  __interceptor_repalloc((addr), (size))
+
+#define ASAN_POISON_POST_REGION(addr, size) \
+  __asan_poison_post_region((addr), (size))
+
 #else
 #define ASAN_POISON_MEMORY_REGION(addr, size) \
   ((void)(addr), (void)(size))
 #define ASAN_UNPOISON_MEMORY_REGION(addr, size) \
   ((void)(addr), (void)(size))
 #define ASAN_MEMPOOL_ALLOC(addr, size) \
+  ((void)(addr), (void)(size))
+#define ASAN_MEMPOOL_REALLOC(addr, size) \
+  ((void)(addr), (void)(size))
+#define ASAN_POISON_POST_REGION(addr, size) \
   ((void)(addr), (void)(size))
 #endif
 
